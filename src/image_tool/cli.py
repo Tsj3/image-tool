@@ -4,17 +4,38 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
+
+from PIL import Image
 
 from . import __version__
 from .core import (
     ImageToolError,
     crop_image,
+    flip_image,
+    grayscale_image,
     open_image,
     read_image_info,
     resize_image,
     resolve_output_path,
+    rotate_image,
     save_image,
 )
+
+# 格式名称与扩展名之间的对应关系，用于格式转换命令。
+_TARGET_FORMATS = {
+    "png": "PNG",
+    "jpg": "JPEG",
+    "jpeg": "JPEG",
+    "webp": "WEBP",
+    "bmp": "BMP",
+}
+_FORMAT_EXTENSIONS = {
+    "PNG": ".png",
+    "JPEG": ".jpg",
+    "WEBP": ".webp",
+    "BMP": ".bmp",
+}
 
 
 def _add_output_argument(parser: argparse.ArgumentParser) -> None:
@@ -59,6 +80,46 @@ def build_parser() -> argparse.ArgumentParser:
     crop_parser.add_argument("-b", "--bottom", type=int, required=True, help="裁剪区域下边界")
     _add_output_argument(crop_parser)
     crop_parser.set_defaults(func=cmd_crop)
+
+    rotate_parser = subparsers.add_parser("rotate", help="旋转图片")
+    rotate_parser.add_argument("image", help="图片文件路径")
+    rotate_parser.add_argument(
+        "-a",
+        "--angle",
+        type=int,
+        required=True,
+        help="顺时针旋转角度，例如 90、180、270",
+    )
+    _add_output_argument(rotate_parser)
+    rotate_parser.set_defaults(func=cmd_rotate)
+
+    flip_parser = subparsers.add_parser("flip", help="翻转图片")
+    flip_parser.add_argument("image", help="图片文件路径")
+    flip_parser.add_argument(
+        "-d",
+        "--direction",
+        choices=("horizontal", "vertical", "both"),
+        required=True,
+        help="翻转方向：horizontal（水平）、vertical（垂直）、both（两者）",
+    )
+    _add_output_argument(flip_parser)
+    flip_parser.set_defaults(func=cmd_flip)
+
+    gray_parser = subparsers.add_parser("grayscale", help="把图片转换为灰度图")
+    gray_parser.add_argument("image", help="图片文件路径")
+    _add_output_argument(gray_parser)
+    gray_parser.set_defaults(func=cmd_grayscale)
+
+    convert_parser = subparsers.add_parser("convert", help="转换图片格式")
+    convert_parser.add_argument("image", help="图片文件路径")
+    convert_parser.add_argument(
+        "--to",
+        choices=tuple(_TARGET_FORMATS),
+        required=True,
+        help="目标格式",
+    )
+    _add_output_argument(convert_parser)
+    convert_parser.set_defaults(func=cmd_convert)
 
     return parser
 
@@ -106,6 +167,52 @@ def cmd_crop(args: argparse.Namespace) -> int:
         bottom=args.bottom,
     )
     return _save_and_report(result, args.image, args.output, "cropped")
+
+
+def cmd_rotate(args: argparse.Namespace) -> int:
+    """旋转图片。"""
+    image = open_image(args.image)
+    result = rotate_image(image, angle=args.angle)
+    return _save_and_report(result, args.image, args.output, "rotated")
+
+
+def cmd_flip(args: argparse.Namespace) -> int:
+    """翻转图片。"""
+    image = open_image(args.image)
+    result = flip_image(image, direction=args.direction)
+    return _save_and_report(result, args.image, args.output, "flipped")
+
+
+def cmd_grayscale(args: argparse.Namespace) -> int:
+    """把图片转换为灰度图。"""
+    image = open_image(args.image)
+    result = grayscale_image(image)
+    return _save_and_report(result, args.image, args.output, "gray")
+
+
+def cmd_convert(args: argparse.Namespace) -> int:
+    """转换图片格式。"""
+    target_format = _TARGET_FORMATS[args.to.lower()]
+
+    # 如果用户显式指定了输出文件，检查扩展名与目标格式是否一致。
+    if args.output:
+        detected = Image.registered_extensions().get(Path(args.output).suffix.lower())
+        if detected is not None and detected != target_format:
+            raise ImageToolError(
+                f"输出文件扩展名与目标格式不一致：{args.output} 对应 {detected}，"
+                f"但 --to 指定的是 {target_format}。"
+            )
+
+    image = open_image(args.image)
+    destination = resolve_output_path(
+        args.image,
+        args.output,
+        "converted",
+        extension=_FORMAT_EXTENSIONS[target_format],
+    )
+    saved_path = save_image(image, destination, target_format=target_format)
+    print(f"已保存到：{saved_path.resolve()}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

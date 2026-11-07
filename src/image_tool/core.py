@@ -10,8 +10,12 @@ from PIL import Image, UnidentifiedImageError
 # 兼容不同版本的 Pillow。
 try:
     _LANCZOS = Image.Resampling.LANCZOS
+    _BICUBIC = Image.Resampling.BICUBIC
+    _TRANSPOSE = Image.Transpose
 except AttributeError:  # Pillow < 9.1
     _LANCZOS = Image.LANCZOS
+    _BICUBIC = Image.BICUBIC
+    _TRANSPOSE = Image
 
 
 class ImageToolError(Exception):
@@ -153,6 +157,7 @@ def resolve_output_path(
     source: str | Path,
     output: str | Path | None,
     suffix: str,
+    extension: str | None = None,
 ) -> Path:
     """确定输出路径，默认在源文件旁生成不重名的新文件。"""
     source_path = Path(source)
@@ -166,7 +171,7 @@ def resolve_output_path(
             raise ImageToolError(f"输出目录不存在：{destination.parent}")
         return destination
 
-    extension = source_path.suffix
+    extension = extension or source_path.suffix
     if not extension:
         raise ImageToolError("源文件没有扩展名，无法确定输出格式，请用 -o 指定输出文件。")
 
@@ -218,3 +223,38 @@ def save_image(
     except OSError as exc:
         raise ImageToolError(f"保存图片失败：{destination_path}（{exc}）") from exc
     return destination_path
+
+
+def rotate_image(image: Image.Image, angle: int) -> Image.Image:
+    """顺时针旋转图片；90、180、270 度使用无损的转置操作。"""
+    normalized = angle % 360
+    if normalized == 0:
+        return image.copy()
+    if normalized == 90:
+        return image.transpose(_TRANSPOSE.ROTATE_270)
+    if normalized == 180:
+        return image.transpose(_TRANSPOSE.ROTATE_180)
+    if normalized == 270:
+        return image.transpose(_TRANSPOSE.ROTATE_90)
+
+    # 任意角度：Pillow 的正角度是逆时针，所以传入 -angle 实现顺时针。
+    work = image
+    if work.mode == "P":
+        work = work.convert("RGBA" if "transparency" in work.info else "RGB")
+    return work.rotate(-angle, expand=True, resample=_BICUBIC)
+
+
+def flip_image(image: Image.Image, direction: str) -> Image.Image:
+    """水平或垂直翻转图片。"""
+    if direction == "horizontal":
+        return image.transpose(_TRANSPOSE.FLIP_LEFT_RIGHT)
+    if direction == "vertical":
+        return image.transpose(_TRANSPOSE.FLIP_TOP_BOTTOM)
+    if direction == "both":
+        return image.transpose(_TRANSPOSE.ROTATE_180)
+    raise ImageToolError("翻转方向只能是 horizontal、vertical 或 both。")
+
+
+def grayscale_image(image: Image.Image) -> Image.Image:
+    """把彩色图片转换为灰度图片。"""
+    return image.convert("L")
