@@ -6,7 +6,24 @@ import argparse
 import sys
 
 from . import __version__
-from .core import ImageToolError, read_image_info
+from .core import (
+    ImageToolError,
+    crop_image,
+    open_image,
+    read_image_info,
+    resize_image,
+    resolve_output_path,
+    save_image,
+)
+
+
+def _add_output_argument(parser: argparse.ArgumentParser) -> None:
+    """为子命令添加统一的输出文件参数。"""
+    parser.add_argument(
+        "-o",
+        "--output",
+        help="输出文件路径；不指定时在源文件旁生成新文件",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -27,6 +44,22 @@ def build_parser() -> argparse.ArgumentParser:
     info_parser.add_argument("image", help="图片文件路径")
     info_parser.set_defaults(func=cmd_info)
 
+    resize_parser = subparsers.add_parser("resize", help="缩放图片")
+    resize_parser.add_argument("image", help="图片文件路径")
+    resize_parser.add_argument("-w", "--width", type=int, help="目标宽度（像素）")
+    resize_parser.add_argument("--height", type=int, help="目标高度（像素）")
+    _add_output_argument(resize_parser)
+    resize_parser.set_defaults(func=cmd_resize)
+
+    crop_parser = subparsers.add_parser("crop", help="裁剪图片")
+    crop_parser.add_argument("image", help="图片文件路径")
+    crop_parser.add_argument("-l", "--left", type=int, required=True, help="裁剪区域左边界")
+    crop_parser.add_argument("-t", "--top", type=int, required=True, help="裁剪区域上边界")
+    crop_parser.add_argument("-r", "--right", type=int, required=True, help="裁剪区域右边界")
+    crop_parser.add_argument("-b", "--bottom", type=int, required=True, help="裁剪区域下边界")
+    _add_output_argument(crop_parser)
+    crop_parser.set_defaults(func=cmd_crop)
+
     return parser
 
 
@@ -40,6 +73,39 @@ def cmd_info(args: argparse.Namespace) -> int:
     print(f"颜色模式：{info.mode_text}")
     print(f"文件大小：{info.size_text}（{info.size_bytes} 字节）")
     return 0
+
+
+def _save_and_report(
+    image,
+    source: str,
+    output: str | None,
+    suffix: str,
+) -> int:
+    """保存处理结果并告诉用户保存位置。"""
+    destination = resolve_output_path(source, output, suffix)
+    saved_path = save_image(image, destination)
+    print(f"已保存到：{saved_path.resolve()}")
+    return 0
+
+
+def cmd_resize(args: argparse.Namespace) -> int:
+    """缩放图片。"""
+    image = open_image(args.image)
+    result = resize_image(image, width=args.width, height=args.height)
+    return _save_and_report(result, args.image, args.output, "resized")
+
+
+def cmd_crop(args: argparse.Namespace) -> int:
+    """裁剪图片。"""
+    image = open_image(args.image)
+    result = crop_image(
+        image,
+        left=args.left,
+        top=args.top,
+        right=args.right,
+        bottom=args.bottom,
+    )
+    return _save_and_report(result, args.image, args.output, "cropped")
 
 
 def main(argv: list[str] | None = None) -> int:
