@@ -1,0 +1,22 @@
+# Python 虚拟环境
+.venv/
+venv/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 构建产物
+build/
+dist/
+
+# uv 本地环境
+.uv/
+
+# 本地测试输出
+output/
+*.tmp
